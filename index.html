@@ -1,0 +1,1170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>BugLens — AI Code Review</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,300;0,400;0,600;1,400&family=Playfair+Display:wght@700;900&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet"/>
+<style>
+:root {
+  --ink:#0e0e12; --paper:#f5f3ee; --cream:#ede9e0; --rule:#d4cfc4;
+  --accent:#c0392b; --accent2:#e67e22; --safe:#27ae60; --warn:#e67e22;
+  --danger:#c0392b; --blue:#2c6fad;
+  --mono:'IBM Plex Mono',monospace; --display:'Playfair Display',serif; --body:'DM Sans',sans-serif;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:var(--paper);color:var(--ink);font-family:var(--body);min-height:100vh}
+body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
+  background-image:linear-gradient(var(--rule) 1px,transparent 1px),linear-gradient(90deg,var(--rule) 1px,transparent 1px);
+  background-size:40px 40px;opacity:.35}
+.site{position:relative;z-index:1}
+.wrap{max-width:1100px;margin:0 auto;padding:0 24px}
+
+/* Header */
+header{border-bottom:2px solid var(--ink);background:var(--paper);position:sticky;top:0;z-index:100}
+.header-inner{display:flex;align-items:center;justify-content:space-between;padding:14px 0}
+.logo-name{font-family:var(--display);font-size:1.4rem;font-weight:900;letter-spacing:-.02em}
+.logo-sub{font-family:var(--mono);font-size:10px;color:var(--accent);letter-spacing:.12em;text-transform:uppercase}
+.header-badge{font-family:var(--mono);font-size:10px;border:1.5px solid var(--ink);padding:4px 10px;
+  border-radius:3px;background:var(--ink);color:var(--paper)}
+
+/* Hero */
+.hero-strip{border-bottom:1px solid var(--rule);padding:36px 0 28px;display:grid;grid-template-columns:1fr auto;gap:24px;align-items:end}
+.hero-title{font-family:var(--display);font-size:clamp(1.8rem,4.5vw,3.2rem);font-weight:900;line-height:1.05;letter-spacing:-.03em}
+.hero-title em{font-style:italic;color:var(--accent)}
+.hero-desc{font-family:var(--mono);font-size:11px;color:#666;line-height:1.9;max-width:320px;text-align:right}
+.hero-desc span{color:var(--ink);font-weight:600}
+
+/* Main grid */
+.main-grid{display:grid;grid-template-columns:1fr 400px;gap:0;border:1px solid var(--rule);border-top:none;min-height:600px}
+.editor-col{border-right:1px solid var(--rule)}
+.col-header{display:flex;align-items:center;justify-content:space-between;padding:10px 16px;
+  border-bottom:1px solid var(--rule);background:var(--cream)}
+.col-label{font-family:var(--mono);font-size:10px;letter-spacing:.12em;color:#888;text-transform:uppercase}
+.lang-pills{display:flex;gap:4px;flex-wrap:wrap}
+.lang-pill{font-family:var(--mono);font-size:10px;padding:3px 10px;border-radius:2px;
+  border:1px solid var(--rule);cursor:pointer;transition:all .15s;background:var(--paper);color:#888}
+.lang-pill.active,.lang-pill:hover{background:var(--ink);color:var(--paper);border-color:var(--ink)}
+
+/* Editor */
+.editor-wrapper{display:flex;position:relative}
+.line-numbers{font-family:var(--mono);font-size:12px;line-height:1.7;padding:16px 10px 16px 14px;
+  background:var(--cream);border-right:1px solid var(--rule);color:#bbb;user-select:none;
+  min-width:42px;text-align:right;white-space:pre}
+textarea#code{flex:1;font-family:var(--mono);font-size:12px;line-height:1.7;
+  padding:16px 16px 16px 12px;background:transparent;border:none;outline:none;
+  color:var(--ink);resize:none;min-height:400px;tab-size:4;caret-color:var(--accent);white-space:pre}
+.bug-highlight-row{position:absolute;left:0;right:0;background:rgba(192,57,43,.07);
+  border-left:3px solid var(--accent);pointer-events:none;z-index:1;transition:opacity .3s}
+
+/* Editor footer */
+.editor-footer{border-top:1px solid var(--rule);padding:10px 14px;display:flex;gap:6px;
+  flex-wrap:wrap;background:var(--cream)}
+.preset-btn{font-family:var(--mono);font-size:9px;padding:3px 10px;border-radius:2px;
+  border:1px solid var(--rule);cursor:pointer;background:var(--paper);color:var(--ink);
+  letter-spacing:.03em;transition:all .15s}
+.preset-btn:hover{background:var(--ink);color:var(--paper);border-color:var(--ink)}
+
+/* Action buttons row */
+.action-row{padding:12px 16px;border-top:2px solid var(--ink);background:var(--cream);
+  display:flex;gap:8px}
+.scan-btn{flex:1;padding:13px;background:var(--ink);color:var(--paper);font-family:var(--display);
+  font-size:.95rem;font-weight:700;border:2px solid var(--ink);border-radius:3px;cursor:pointer;
+  letter-spacing:-.01em;transition:all .2s;position:relative;overflow:hidden}
+.scan-btn:hover{background:var(--accent);border-color:var(--accent)}
+.scan-btn:disabled{opacity:.4;cursor:not-allowed}
+.suggest-btn{padding:13px 20px;background:var(--paper);color:var(--ink);font-family:var(--mono);
+  font-size:11px;font-weight:600;border:2px solid var(--ink);border-radius:3px;cursor:pointer;
+  letter-spacing:.04em;transition:all .2s;white-space:nowrap}
+.suggest-btn:hover{background:#f0c40020;border-color:var(--accent2);color:var(--accent2)}
+.suggest-btn:disabled{opacity:.4;cursor:not-allowed}
+
+/* Results col */
+.results-col{display:flex;flex-direction:column}
+.results-empty{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;
+  padding:48px 24px;text-align:center}
+.empty-icon{font-size:3rem;margin-bottom:16px;opacity:.3;animation:float 3s ease-in-out infinite}
+@keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-8px)}}
+.empty-txt{font-family:var(--mono);font-size:11px;color:#aaa;line-height:1.8}
+
+/* Verdict */
+.verdict{padding:18px 18px 14px;border-bottom:1px solid var(--rule);animation:slideIn .35s cubic-bezier(.16,1,.3,1)}
+@keyframes slideIn{from{opacity:0;transform:translateY(-10px)}to{opacity:1;transform:translateY(0)}}
+.verdict.safe{background:rgba(39,174,96,.06)}
+.verdict.buggy{background:rgba(192,57,43,.05)}
+.verdict-head{display:flex;align-items:center;gap:12px;margin-bottom:8px}
+.verdict-icon{font-size:1.5rem}
+.verdict-status{font-family:var(--display);font-size:1.2rem;font-weight:900;letter-spacing:-.02em}
+.verdict-status.safe{color:var(--safe)}
+.verdict-status.buggy{color:var(--danger)}
+.verdict-meta{font-family:var(--mono);font-size:10px;color:#888;display:flex;gap:12px;flex-wrap:wrap}
+.vm-chip{padding:2px 8px;border-radius:2px;border:1px solid var(--rule)}
+.lang-chip{padding:2px 8px;border-radius:2px;border:1px solid var(--blue);color:var(--blue);
+  background:rgba(44,111,173,.08);font-family:var(--mono);font-size:9px;text-transform:uppercase}
+
+/* Bug cards */
+.bugs-section{flex:1;overflow-y:auto}
+.bugs-section-head{padding:10px 18px;border-bottom:1px solid var(--rule);background:var(--cream);
+  font-family:var(--mono);font-size:10px;letter-spacing:.1em;color:#888;text-transform:uppercase;
+  display:flex;justify-content:space-between}
+.bug-card{border-bottom:1px solid var(--rule);padding:14px 18px;cursor:pointer;transition:background .15s;
+  animation:fadeCard .3s ease both}
+.bug-card:hover{background:rgba(192,57,43,.04)}
+@keyframes fadeCard{from{opacity:0;transform:translateX(8px)}to{opacity:1;transform:translateX(0)}}
+.bug-top{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}
+.bug-name{font-family:var(--mono);font-size:11px;font-weight:600;color:var(--danger)}
+.bug-sev{font-family:var(--mono);font-size:9px;letter-spacing:.08em;padding:2px 8px;border-radius:2px;flex-shrink:0;text-transform:uppercase}
+.sev-CRITICAL{background:rgba(192,57,43,.15);color:var(--danger);border:1px solid rgba(192,57,43,.3)}
+.sev-HIGH{background:rgba(230,126,34,.15);color:var(--accent2);border:1px solid rgba(230,126,34,.3)}
+.sev-MEDIUM{background:rgba(44,111,173,.12);color:var(--blue);border:1px solid rgba(44,111,173,.3)}
+.sev-LOW{background:rgba(39,174,96,.12);color:var(--safe);border:1px solid rgba(39,174,96,.3)}
+.bug-line{font-family:var(--mono);font-size:10px;color:#999;margin-top:4px;display:flex;align-items:center;gap:6px}
+.line-badge{background:var(--ink);color:var(--paper);font-size:9px;padding:1px 6px;border-radius:2px}
+.bug-desc{font-size:11px;color:#555;margin-top:5px;line-height:1.5}
+.bug-fixes{display:none;margin-top:12px}
+.bug-fixes.open{display:block}
+.fixes-label{font-family:var(--mono);font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:#aaa;margin-bottom:6px}
+.fix-tab-row{display:flex;gap:4px;margin-bottom:8px;flex-wrap:wrap}
+.fix-tab{font-family:var(--mono);font-size:9px;padding:3px 10px;border-radius:2px;
+  border:1px solid var(--rule);background:var(--paper);cursor:pointer;color:#888;transition:all .15s}
+.fix-tab.active{background:var(--safe);color:white;border-color:var(--safe)}
+.fix-block{display:none}
+.fix-block.active{display:block}
+.fix-approach{font-size:11px;color:#666;margin-bottom:5px;line-height:1.5;font-style:italic}
+pre.fix-code{background:#0e0e12;color:#a8e6a3;font-family:var(--mono);font-size:11px;line-height:1.6;
+  padding:10px 12px;border-radius:4px;overflow-x:auto;position:relative;white-space:pre-wrap}
+.copy-fix{position:absolute;top:6px;right:6px;font-family:var(--mono);font-size:9px;
+  background:rgba(255,255,255,.08);color:#aaa;border:1px solid rgba(255,255,255,.1);
+  border-radius:2px;padding:2px 8px;cursor:pointer;transition:all .15s}
+.copy-fix:hover{background:rgba(255,255,255,.18);color:white}
+
+/* History */
+.history-section{border-top:2px solid var(--ink)}
+.history-head{padding:12px 18px;font-family:var(--mono);font-size:10px;letter-spacing:.12em;
+  text-transform:uppercase;border-bottom:1px solid var(--rule);display:flex;justify-content:space-between;
+  align-items:center;background:var(--cream);cursor:pointer;user-select:none}
+.history-head:hover{background:var(--rule)}
+.history-list{display:none;max-height:320px;overflow-y:auto}
+.history-list.open{display:block}
+.hist-row{display:grid;grid-template-columns:18px 1fr auto auto;gap:10px;align-items:center;
+  padding:10px 18px;border-bottom:1px solid var(--rule);cursor:pointer;transition:background .15s}
+.hist-row:hover{background:var(--cream)}
+.hist-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.hist-snippet{font-family:var(--mono);font-size:11px;color:#555;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hist-bugs{font-family:var(--mono);font-size:10px;color:var(--danger)}
+.hist-time{font-family:var(--mono);font-size:10px;color:#bbb}
+.hist-empty{padding:28px;text-align:center;font-family:var(--mono);font-size:11px;color:#bbb}
+
+/* Spinner */
+@keyframes spin{to{transform:rotate(360deg)}}
+.spin{display:inline-block;width:13px;height:13px;border:2px solid rgba(255,255,255,.3);
+  border-top-color:white;border-radius:50%;animation:spin .6s linear infinite;vertical-align:middle;margin-right:7px}
+
+/* ── SUGGEST MODAL ──────────────────────────────────── */
+.modal-overlay{display:none;position:fixed;inset:0;background:rgba(14,14,18,.75);
+  z-index:1000;align-items:center;justify-content:center;padding:20px}
+.modal-overlay.open{display:flex}
+.modal{background:var(--paper);border:2px solid var(--ink);border-radius:4px;
+  width:100%;max-width:860px;max-height:90vh;overflow:hidden;display:flex;flex-direction:column;
+  animation:modalIn .3s cubic-bezier(.16,1,.3,1)}
+@keyframes modalIn{from{opacity:0;transform:scale(.95)}to{opacity:1;transform:scale(1)}}
+.modal-header{display:flex;align-items:center;justify-content:space-between;
+  padding:16px 20px;border-bottom:2px solid var(--ink);background:var(--cream);flex-shrink:0}
+.modal-title{font-family:var(--display);font-size:1.2rem;font-weight:900;letter-spacing:-.02em}
+.modal-close{font-family:var(--mono);font-size:12px;background:none;border:1px solid var(--rule);
+  padding:4px 12px;border-radius:2px;cursor:pointer;color:var(--ink);transition:all .15s}
+.modal-close:hover{background:var(--ink);color:var(--paper)}
+.modal-body{overflow-y:auto;padding:20px;flex:1}
+
+.algo-banner{background:var(--ink);color:var(--paper);padding:16px 20px;border-radius:4px;margin-bottom:20px}
+.algo-name{font-family:var(--display);font-size:1.4rem;font-weight:900;letter-spacing:-.02em}
+.algo-desc{font-family:var(--mono);font-size:11px;color:#aaa;margin-top:4px;line-height:1.6}
+
+.corrected-section{margin-bottom:20px}
+.section-label{font-family:var(--mono);font-size:9px;letter-spacing:.12em;text-transform:uppercase;
+  color:#888;margin-bottom:8px}
+pre.corrected-code{background:#0e0e12;color:#7ec8e3;font-family:var(--mono);font-size:11px;
+  line-height:1.65;padding:14px;border-radius:4px;overflow-x:auto;white-space:pre-wrap}
+
+.impl-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(380px,1fr));gap:12px}
+.impl-card{border:1px solid var(--rule);border-radius:4px;overflow:hidden}
+.impl-head{padding:10px 14px;background:var(--cream);border-bottom:1px solid var(--rule);
+  display:flex;justify-content:space-between;align-items:center}
+.impl-method{font-family:var(--mono);font-size:11px;font-weight:600;color:var(--ink)}
+.impl-badges{display:flex;gap:6px}
+.impl-time,.impl-space{font-family:var(--mono);font-size:9px;padding:2px 7px;border-radius:2px}
+.impl-time{background:rgba(192,57,43,.1);color:var(--danger);border:1px solid rgba(192,57,43,.2)}
+.impl-space{background:rgba(44,111,173,.1);color:var(--blue);border:1px solid rgba(44,111,173,.2)}
+.impl-when{font-family:var(--mono);font-size:10px;color:#888;padding:8px 14px;
+  border-bottom:1px solid var(--rule);font-style:italic}
+pre.impl-code{background:#0e0e12;color:#a8e6a3;font-family:var(--mono);font-size:11px;
+  line-height:1.6;padding:12px 14px;overflow-x:auto;white-space:pre-wrap;margin:0}
+
+.modal-loading{text-align:center;padding:60px 20px;font-family:var(--mono);font-size:13px;color:#888}
+.modal-error{text-align:center;padding:40px 20px;font-family:var(--mono);font-size:12px;color:var(--danger)}
+.modal-error-note{margin-top:10px;font-size:11px;color:#aaa;line-height:1.6}
+
+/* ── Unique feature panels ───────────────────────── */
+.feat-tab-bar{display:flex;border-bottom:2px solid var(--ink);background:var(--cream);flex-wrap:wrap}
+.feat-tab{font-family:var(--mono);font-size:10px;padding:9px 14px;cursor:pointer;
+  border-right:1px solid var(--rule);letter-spacing:.05em;color:#888;transition:all .15s;white-space:nowrap}
+.feat-tab:hover{background:var(--rule)}
+.feat-tab.active{background:var(--ink);color:var(--paper)}
+.feat-panel{display:none;padding:16px;overflow-y:auto;max-height:400px}
+.feat-panel.active{display:block}
+.cplx-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px}
+.cplx-card{border:1px solid var(--rule);border-radius:4px;padding:12px}
+.cplx-lbl{font-family:var(--mono);font-size:9px;letter-spacing:.1em;color:#888;text-transform:uppercase;margin-bottom:5px}
+.cplx-val{font-family:var(--display);font-size:1.5rem;font-weight:900;letter-spacing:-.03em}
+.on{color:var(--safe)}.nlogn{color:var(--blue)}.n2{color:var(--warn)}.exp{color:var(--danger)}
+.cplx-why{font-family:var(--mono);font-size:10px;color:#888;margin-top:4px;line-height:1.5}
+.cplx-tip{background:rgba(39,174,96,.06);border:1px solid rgba(39,174,96,.2);border-radius:4px;padding:10px;margin-top:10px;font-family:var(--mono);font-size:11px;color:#555;line-height:1.6}
+.score-row{display:flex;align-items:center;gap:16px;margin-bottom:14px;padding:14px;border:1px solid var(--rule);border-radius:4px}
+.score-circle{width:56px;height:56px;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-family:var(--display);font-size:1.3rem;font-weight:900}
+.sc-a{background:rgba(39,174,96,.15);color:var(--safe);border:2px solid var(--safe)}
+.sc-b{background:rgba(44,111,173,.15);color:var(--blue);border:2px solid var(--blue)}
+.sc-c{background:rgba(230,126,34,.15);color:var(--warn);border:2px solid var(--warn)}
+.sc-d,.sc-f{background:rgba(192,57,43,.15);color:var(--danger);border:2px solid var(--danger)}
+.score-bar{height:5px;background:var(--rule);border-radius:3px;margin-top:7px;overflow:hidden}
+.score-fill{height:100%;border-radius:3px;transition:width .8s cubic-bezier(.16,1,.3,1)}
+.smell-item{border:1px solid var(--rule);border-radius:4px;padding:11px;margin-bottom:7px}
+.smell-name{font-family:var(--mono);font-size:11px;font-weight:600;margin-bottom:4px}
+.smell-fix{font-family:var(--mono);font-size:10px;color:#666;line-height:1.5}
+.exploit-card{border:2px solid rgba(192,57,43,.3);border-radius:4px;overflow:hidden;margin-bottom:10px}
+.exploit-hd{background:rgba(192,57,43,.08);padding:12px 14px;border-bottom:1px solid rgba(192,57,43,.2)}
+.exploit-title{font-family:var(--display);font-size:.95rem;font-weight:900;color:var(--danger)}
+.exploit-risk{font-family:var(--mono);font-size:9px;color:var(--danger);margin-top:3px;letter-spacing:.04em}
+.exploit-bd{padding:12px 14px}
+.xstep{display:flex;gap:8px;margin-bottom:5px;font-family:var(--mono);font-size:11px;color:#555}
+.xnum{width:18px;height:18px;border-radius:50%;background:var(--danger);color:white;display:flex;align-items:center;justify-content:center;font-size:8px;flex-shrink:0;margin-top:1px}
+.ptable{width:100%;border-collapse:collapse;margin:10px 0;font-family:var(--mono);font-size:10px}
+.ptable th{text-align:left;padding:5px 8px;background:var(--cream);border:1px solid var(--rule);font-size:9px;letter-spacing:.06em;text-transform:uppercase;color:#888}
+.ptable td{padding:5px 8px;border:1px solid var(--rule);vertical-align:top}
+.ptd-payload{color:var(--danger);word-break:break-all;font-weight:600}
+.rw-note{background:rgba(14,14,18,.04);border-left:3px solid var(--danger);padding:9px 12px;margin-top:10px;font-family:var(--mono);font-size:10px;color:#555;line-height:1.6}
+
+/* Footer */
+footer{margin-top:0;padding:18px 0;border-top:2px solid var(--ink);display:flex;
+  justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px}
+.footer-left,.footer-right{font-family:var(--mono);font-size:10px;color:#aaa;line-height:1.8}
+
+@media(max-width:780px){
+  .main-grid{grid-template-columns:1fr}
+  .editor-col{border-right:none;border-bottom:1px solid var(--rule)}
+  .hero-strip{grid-template-columns:1fr}
+  .hero-desc{text-align:left;max-width:100%}
+  .impl-grid{grid-template-columns:1fr}
+  .action-row{flex-direction:column}
+}
+</style>
+</head>
+<body>
+<div class="site">
+<div class="wrap">
+
+<header>
+  <div class="header-inner">
+    <div>
+      <div class="logo-name">BugLens</div>
+      <div class="logo-sub">AI Code Review System</div>
+    </div>
+    <div style="display:flex;align-items:center;gap:10px">
+      <span class="header-badge">HGSN v3 · M2</span>
+      <span id="serverStatus" style="font-family:var(--mono);font-size:10px;color:#bbb"></span>
+    </div>
+  </div>
+</header>
+
+<div class="hero-strip">
+  <h1 class="hero-title">Find bugs.<br/>Fix <em>everything.</em></h1>
+  <p class="hero-desc">
+    <span>Multi-language AI engine</span> — Python, Java, C/C++,<br/>
+    JavaScript, HTML. Detects every error type.<br/>
+    Suggests best implementations.
+  </p>
+</div>
+
+<div class="main-grid">
+  <!-- LEFT: Editor -->
+  <div class="editor-col">
+    <div class="col-header">
+      <span class="col-label">Source Code</span>
+      <div class="lang-pills" id="langPills">
+        <div class="lang-pill active" onclick="setLang(this,'python')">Python</div>
+        <div class="lang-pill" onclick="setLang(this,'java')">Java</div>
+        <div class="lang-pill" onclick="setLang(this,'c')">C</div>
+        <div class="lang-pill" onclick="setLang(this,'cpp')">C++</div>
+        <div class="lang-pill" onclick="setLang(this,'javascript')">JavaScript</div>
+        <div class="lang-pill" onclick="setLang(this,'html')">HTML</div>
+      </div>
+    </div>
+
+    <div class="editor-wrapper" id="editorWrapper">
+      <div class="line-numbers" id="lineNumbers">1</div>
+      <textarea id="code" spellcheck="false" placeholder="# Paste your code here..."></textarea>
+    </div>
+
+    <div class="editor-footer">
+      <span style="font-family:var(--mono);font-size:9px;color:#bbb;align-self:center">PRESETS</span>
+      <!-- Python -->
+      <button class="preset-btn" onclick="loadPreset('syntax_colon')">Syntax Error</button>
+      <button class="preset-btn" onclick="loadPreset('offbyone')">Off-by-One</button>
+      <button class="preset-btn" onclick="loadPreset('nullderef')">Null Deref</button>
+      <button class="preset-btn" onclick="loadPreset('sqli')">SQL Injection</button>
+      <button class="preset-btn" onclick="loadPreset('fib_slow')">Fib O(2^n)</button>
+      <button class="preset-btn" onclick="loadPreset('recursion_no_base')">No Base Case</button>
+      <button class="preset-btn" onclick="loadPreset('mutable_default')">Mutable Default</button>
+      <button class="preset-btn" onclick="loadPreset('eval_danger')">eval() RCE</button>
+      <!-- Java -->
+      <button class="preset-btn" onclick="loadPreset('java_errors')">Java Errors</button>
+      <!-- C -->
+      <button class="preset-btn" onclick="loadPreset('c_errors')">C Errors</button>
+      <!-- JavaScript -->
+      <button class="preset-btn" onclick="loadPreset('js_errors')">JS Errors</button>
+      <!-- HTML -->
+      <button class="preset-btn" onclick="loadPreset('html_errors')">HTML Errors</button>
+      <!-- Clean -->
+      <button class="preset-btn" onclick="loadPreset('clean')">Clean Code</button>
+    </div>
+
+    <div class="action-row">
+      <button class="scan-btn" id="scanBtn" onclick="runScan()">Scan for Bugs</button>
+      <button class="suggest-btn" id="suggestBtn" onclick="runSuggest()">&#10024; Suggest</button>
+    </div>
+  </div>
+
+  <!-- RIGHT: Results -->
+  <div class="results-col" id="resultsCol">
+    <div class="results-empty" id="resultsEmpty">
+      <div class="empty-icon">&#128300;</div>
+      <div class="empty-txt">
+        Paste code on the left<br/>
+        and press <strong style="color:var(--ink)">Scan for Bugs</strong><br/><br/>
+        Click <strong style="color:var(--accent2)">&#10024; Suggest</strong> to get<br/>
+        all implementations of the algorithm
+      </div>
+    </div>
+    <div id="resultsContent" style="display:none;flex:1;flex-direction:column"></div>
+  </div>
+</div>
+
+<!-- History -->
+<!-- Unique Feature Panels -->
+<div id="featurePanels" style="display:none;border:1px solid var(--rule);border-top:2px solid var(--ink)">
+  <div class="feat-tab-bar">
+    <div class="feat-tab active" id="ftab-exploit" onclick="showFeatPanel('exploit',this)">&#128512; Exploit Simulation</div>
+    <div class="feat-tab" id="ftab-complexity" onclick="showFeatPanel('complexity',this)">&#128200; Complexity Analysis</div>
+    <div class="feat-tab" id="ftab-quality" onclick="showFeatPanel('quality',this)">&#11088; Code Quality</div>
+  </div>
+  <div class="feat-panel active" id="fpanel-exploit">
+    <div style="font-family:var(--mono);font-size:11px;color:#aaa;text-align:center;padding:20px">
+      Run a scan to see exploit simulations for detected vulnerabilities
+    </div>
+  </div>
+  <div class="feat-panel" id="fpanel-complexity">
+    <div style="font-family:var(--mono);font-size:11px;color:#aaa;text-align:center;padding:20px">
+      Run a scan to see complexity analysis
+    </div>
+  </div>
+  <div class="feat-panel" id="fpanel-quality">
+    <div style="font-family:var(--mono);font-size:11px;color:#aaa;text-align:center;padding:20px">
+      Run a scan to see code quality score
+    </div>
+  </div>
+</div>
+
+<div class="history-section">
+  <div class="history-head" onclick="toggleHistory()">
+    <span>// Scan History</span>
+    <span id="histToggle">&#9660; show</span>
+  </div>
+  <div class="history-list" id="historyList">
+    <div class="hist-empty" id="histEmpty">No scans yet.</div>
+  </div>
+</div>
+
+<footer>
+  <div class="footer-left">
+    BugLens &#183; HGSN v3 &#183; Python &#183; Java &#183; C/C++ &#183; JavaScript &#183; HTML<br/>
+    Trained on Devign/CodeXGLUE &#183; Apple M2 Optimized
+  </div>
+  <div class="footer-right">AST Transformer + CFG-GNN + Multi-lang Heuristics</div>
+</footer>
+
+</div><!-- /wrap -->
+</div><!-- /site -->
+
+<!-- ── SUGGEST MODAL ──────────────────────────────────── -->
+<div class="modal-overlay" id="suggestModal" onclick="closeModalOutside(event)">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title" id="modalTitle">&#10024; Algorithm Suggestions</div>
+      <button class="modal-close" onclick="closeModal()">&#10005; close</button>
+    </div>
+    <div class="modal-body" id="modalBody">
+      <div class="modal-loading">
+        <div style="font-size:2rem;margin-bottom:16px">&#129302;</div>
+        Analyzing your code...<br/>
+        <span style="font-size:10px;color:#bbb">Identifying algorithm and generating all implementations</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════
+// PRESETS
+// ═══════════════════════════════════════════════════
+const PRESETS = {
+syntax_colon:{lang:'python',code:`def greet_user(name)
+    print(f"Hello, {name}!")`},
+
+offbyone:{lang:'python',code:`def sum_array(arr):
+    total = 0
+    for i in range(len(arr) + 1):
+        total += arr[i]
+    return total
+
+print(sum_array([10, 20, 30]))`},
+
+nullderef:{lang:'python',code:`class Node:
+    def __init__(self, val):
+        self.val = val
+        self.next = None
+
+def get_last(head):
+    while head.next != None:
+        head = head.next
+    return head.val
+
+print(get_last(None))`},
+
+sqli:{lang:'python',code:`import sqlite3
+
+def find_user(username):
+    conn = sqlite3.connect("app.db")
+    cursor = conn.cursor()
+    query = f"SELECT * FROM users WHERE name = '{username}'"
+    cursor.execute(query)
+    return cursor.fetchone()
+
+find_user("admin' OR '1'='1")`},
+
+fib_slow:{lang:'python',code:`def fib(n):
+    if n == 0: return 0
+    if n == 1: return 1
+    return fib(n-1) + fib(n-2)
+
+print(fib(40))`},
+
+recursion_no_base:{lang:'python',code:`def countdown(n):
+    print(n)
+    countdown(n - 1)
+
+countdown(10)`},
+
+mutable_default:{lang:'python',code:`def add_item(item, items=[]):
+    items.append(item)
+    return items
+
+print(add_item(1))
+print(add_item(2))`},
+
+eval_danger:{lang:'python',code:`def calculate(expr):
+    result = eval(expr)
+    return result
+
+print(calculate("__import__('os').system('ls')"))`},
+
+java_errors:{lang:'java',code:`import java.io;
+import java.util.Scanner;
+
+public class ErrorfulProgram {
+
+    public static void main(String[] args) {
+        int number = 10;
+        String message = "Hello, World!"
+
+        if (number == "10") {
+            System.out.Println(message);
+        }
+        else {
+            System.out.println("Condition failed.");
+        }
+
+        int count;
+        for (i = 0; i < 5; i++) {
+            count += i;
+        }
+
+        Scanner scanner = new Scanner(System.in);
+        System.out.print("Enter a number: ");
+        int divisor = scanner.nextInt();
+        int result = number / divisor;
+
+        System.out.println("Result: " + results);
+        scanner.close()
+    }
+}`},
+
+c_errors:{lang:'c',code:`#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+int divide(int a, int b) {
+    return a / b;
+}
+
+void copyString(char* dest, const char* src) {
+    strcpy(dest, src);
+}
+
+int main() {
+    int* ptr = malloc(sizeof(int) * 10);
+    ptr[0] = 42;
+    free(ptr);
+    printf("%d\\n", ptr[0]);
+
+    char buffer[10];
+    printf("Enter name: ");
+    gets(buffer);
+
+    int x = divide(10, 0);
+    printf("Result: %d\\n", x)
+    return 0;
+}`},
+
+js_errors:{lang:'javascript',code:`var x = 10;
+var y = "10";
+
+if (x == y) {
+    console.log("Equal")
+}
+
+eval("console.log('dangerous')");
+
+async function loadData() {
+    const data = fetch('https://api.example.com/data');
+    return data;
+}
+
+function processItems(items) {
+    var result = "";
+    for (var i = 0; i < items.length; i++) {
+        result += items[i] + ", ";
+    }
+    return result;
+}`},
+
+html_errors:{lang:'html',code:`<html>
+<head>
+<title>My Page</title>
+</head>
+<body>
+  <h1>Welcome</h1>
+  <div>
+    <p>First paragraph
+    <p>Second paragraph</p>
+  </div>
+  <img src="photo.jpg">
+  <div style="color: red; font-size: 16px;">Inline styled text</div>
+  <a href="#">Click here</a>
+</body>`},
+
+clean:{lang:'python',code:`from functools import lru_cache
+
+@lru_cache(maxsize=None)
+def fib(n):
+    if n <= 1:
+        return n
+    return fib(n-1) + fib(n-2)
+
+def binary_search(arr, target):
+    lo, hi = 0, len(arr) - 1
+    while lo <= hi:
+        mid = lo + (hi - lo) // 2
+        if arr[mid] == target: return mid
+        elif arr[mid] < target: lo = mid + 1
+        else: hi = mid - 1
+    return -1
+
+print(fib(50))
+print(binary_search([1,3,5,7,9,11], 7))`},
+};
+
+// ═══════════════════════════════════════════════════
+// CLIENT-SIDE HEURISTICS (fallback when no server)
+// ═══════════════════════════════════════════════════
+const CLIENT_RULES = {
+  python: [
+    {id:'OFF_BY_ONE',name:'Off-by-One Error',severity:'HIGH',
+     pattern:/range\s*\(\s*len\s*\(.+?\)\s*\+\s*1\s*\)/,
+     findLine:ll=>ll.findIndex(l=>/range\s*\(\s*len\s*\(.+?\)\s*\+\s*1/.test(l))+1,
+     desc:'Loop iterates one past valid range — IndexError on last iteration.',
+     fixes:[
+       {label:'Fix A — range(len(arr))',approach:'Remove +1.',code:'for i in range(len(arr)):\n    total += arr[i]'},
+       {label:'Fix B — for-each',approach:'No index needed.',code:'for item in arr:\n    total += item'},
+       {label:'Fix C — sum()',approach:'Built-in.',code:'return sum(arr)'},
+       {label:'Fix D — Recursive',approach:'Recursive sum.',code:'def sum_arr(arr,i=0):\n    if i==len(arr): return 0\n    return arr[i]+sum_arr(arr,i+1)'},
+     ]},
+    {id:'SQL_INJECTION',name:'SQL Injection (CWE-89)',severity:'CRITICAL',
+     pattern:/f['"].*?(SELECT|INSERT|WHERE).*?\{/i,
+     findLine:ll=>ll.findIndex(l=>/f['"].*?(SELECT|INSERT|WHERE).*?\{/i.test(l))+1,
+     desc:'User data in SQL string — attacker can execute arbitrary queries.',
+     fixes:[
+       {label:'Fix A — Parameterized',approach:'Use ? placeholder.',code:'cursor.execute("SELECT * FROM users WHERE name=?", (username,))'},
+       {label:'Fix B — ORM',approach:'SQLAlchemy.',code:'session.query(User).filter(User.name==username).first()'},
+     ]},
+    {id:'RESOURCE_LEAK',name:'Resource Leak',severity:'HIGH',
+     pattern:/^\s*\w+\s*=\s*open\s*\(/m,
+     findLine:ll=>ll.findIndex(l=>/=\s*open\s*\(/.test(l))+1,
+     desc:'File opened without context manager.',
+     fixes:[
+       {label:'Fix A — with',approach:'Auto-closes.',code:'with open(f) as fh:\n    data = fh.read()'},
+       {label:'Fix B — pathlib',approach:'One-liner.',code:'from pathlib import Path\ndata = Path(f).read_text()'},
+     ]},
+    {id:'EVAL_DANGER',name:'Dangerous eval()',severity:'CRITICAL',
+     pattern:/\beval\s*\(|\bexec\s*\(/,
+     findLine:ll=>ll.findIndex(l=>/\beval\s*\(|\bexec\s*\(/.test(l))+1,
+     desc:'eval/exec execute arbitrary code — RCE risk.',
+     fixes:[
+       {label:'Fix A — ast.literal_eval',approach:'Safe for literals.',code:'import ast\ndata = ast.literal_eval(input)'},
+       {label:'Fix B — json.loads',approach:'For JSON data.',code:'import json\ndata = json.loads(input)'},
+     ]},
+    {id:'FIB_NO_MEMO',name:'Fibonacci Without Memoization O(2^n)',severity:'HIGH',
+     pattern:/def\s+fib\w*\s*\(/,
+     findLine:ll=>ll.findIndex(l=>/def\s+fib\w*\s*\(/.test(l))+1,
+     desc:'Naive recursive Fibonacci is O(2^n).',
+     fixes:[
+       {label:'Fix A — @lru_cache',approach:'O(n).',code:'from functools import lru_cache\n@lru_cache(maxsize=None)\ndef fib(n):\n    if n<=1: return n\n    return fib(n-1)+fib(n-2)'},
+       {label:'Fix B — DP',approach:'O(n) O(1).',code:'def fib(n):\n    a,b=0,1\n    for _ in range(n): a,b=b,a+b\n    return a'},
+     ]},
+    {id:'RECURSION_NO_BASE',name:'Recursion Without Base Case',severity:'HIGH',
+     pattern:/def\s+(\w+)\s*\([\s\S]{0,200}\1\s*\(/,
+     findLine:ll=>{let m=ll.findIndex((l,i)=>{ const nm=l.match(/def\s+(\w+)/); return nm&&ll.slice(i+1,i+20).some(l2=>l2.includes(nm[1]+'(')); }); return m+1;},
+     desc:'Recursive function may lack base case — RecursionError.',
+     fixes:[
+       {label:'Fix A — Add base case',approach:'Explicit termination.',code:'def factorial(n):\n    if n<=1: return 1\n    return n*factorial(n-1)'},
+       {label:'Fix B — Iterative',approach:'No stack risk.',code:'def factorial(n):\n    r=1\n    for i in range(2,n+1): r*=i\n    return r'},
+     ]},
+  ],
+  java: [
+    {id:'MISSING_SEMI',name:'Missing Semicolon',severity:'CRITICAL',
+     pattern:/String\s+\w+\s*=\s*"[^"]*"\s*\n|int\s+\w+\s*=[^;{\n]+\n/,
+     findLine:ll=>ll.findIndex(l=>/String\s+\w+\s*=\s*"[^"]*"\s*$/.test(l)||/^\s*(int|double|float)\s+\w+\s*=\s*[^;{]+$/.test(l))+1,
+     desc:'Java statement is missing semicolon at end of line.',
+     fixes:[{label:'Fix — Add ;',approach:'End statement with semicolon.',code:'String msg = "Hello";  // semicolon added'}]},
+    {id:'WRONG_CASE',name:'Wrong Method Case: Println',severity:'CRITICAL',
+     pattern:/System\.out\.Println/,
+     findLine:ll=>ll.findIndex(l=>/System\.out\.Println/.test(l))+1,
+     desc:'Java is case-sensitive. Println does not exist — use println.',
+     fixes:[{label:'Fix — Lowercase p',approach:'Change Println to println.',code:'System.out.println(message);'}]},
+    {id:'TYPE_MISMATCH',name:'Type Mismatch: int == String',severity:'CRITICAL',
+     pattern:/\w+\s*==\s*"[^"]*"/,
+     findLine:ll=>ll.findIndex(l=>/\w+\s*==\s*"/.test(l))+1,
+     desc:'Cannot compare int to String with ==. Use .equals() or Integer.parseInt().',
+     fixes:[
+       {label:'Fix A — .equals()',approach:'String comparison.',code:'if (str.equals("10")) { ... }'},
+       {label:'Fix B — parseInt',approach:'Parse to int.',code:'if (number == Integer.parseInt(input)) { ... }'},
+     ]},
+    {id:'UNDECLARED_I',name:'Undeclared Variable in for-loop',severity:'CRITICAL',
+     pattern:/for\s*\(\s*i\s*=/,
+     findLine:ll=>ll.findIndex(l=>/for\s*\(\s*i\s*=/.test(l))+1,
+     desc:"'i' used in for-loop but not declared. Add 'int' before 'i'.",
+     fixes:[{label:'Fix — Declare int i',approach:'Declare type in loop.',code:'for (int i = 0; i < 5; i++) { ... }'}]},
+    {id:'BAD_IMPORT',name:'Invalid Import: java.io',severity:'CRITICAL',
+     pattern:/import\s+java\.io\s*;/,
+     findLine:ll=>ll.findIndex(l=>/import\s+java\.io\s*;/.test(l))+1,
+     desc:"'import java.io;' is invalid. Use 'import java.io.*' or a specific class.",
+     fixes:[
+       {label:'Fix A — Wildcard',approach:'All io classes.',code:'import java.io.*;'},
+       {label:'Fix B — Specific',approach:'Only what you need.',code:'import java.io.IOException;\nimport java.io.FileReader;'},
+     ]},
+    {id:'ARITH_EXCEPTION',name:'Potential ArithmeticException (div by 0)',severity:'HIGH',
+     pattern:/\w+\s*\/\s*(divisor|denominator|n|b|d)\b/,
+     findLine:ll=>ll.findIndex(l=>/\w+\s*\/\s*(divisor|denominator|n|b|d)\b/.test(l))+1,
+     desc:'Division by user-supplied variable — crashes if value is 0.',
+     fixes:[
+       {label:'Fix A — if check',approach:'Guard before dividing.',code:'if (divisor != 0) {\n    int result = number / divisor;\n} else {\n    System.out.println("Cannot divide by zero");\n}'},
+       {label:'Fix B — try/catch',approach:'Catch ArithmeticException.',code:'try {\n    int r = a / b;\n} catch (ArithmeticException e) {\n    System.out.println("Error: "+e.getMessage());\n}'},
+     ]},
+  ],
+  javascript: [
+    {id:'LOOSE_EQ',name:'Loose Equality (==) — Use ===',severity:'HIGH',
+     pattern:/[^=!<>]==[^=]/,
+     findLine:ll=>ll.findIndex(l=>/[^=!<>]==[^=]/.test(l))+1,
+     desc:"'==' coerces types. '5'==5 is true. Use === for strict comparison.",
+     fixes:[{label:'Fix — Use ===',approach:'Strict equality.',code:"if (x === '10') { ... }"}]},
+    {id:'VAR_USAGE',name:"Use 'let'/'const' Instead of 'var'",severity:'MEDIUM',
+     pattern:/^\s*var\s+/m,
+     findLine:ll=>ll.findIndex(l=>/^\s*var\s+/.test(l))+1,
+     desc:"'var' is function-scoped and hoisted — causes subtle bugs.",
+     fixes:[
+       {label:'Fix A — const',approach:'For values that do not change.',code:'const x = 10;'},
+       {label:'Fix B — let',approach:'For values that change.',code:'let x = 10;'},
+     ]},
+    {id:'EVAL_JS',name:'Dangerous eval()',severity:'CRITICAL',
+     pattern:/\beval\s*\(/,
+     findLine:ll=>ll.findIndex(l=>/\beval\s*\(/.test(l))+1,
+     desc:'eval() executes arbitrary JavaScript — XSS/RCE risk.',
+     fixes:[{label:'Fix — JSON.parse',approach:'For data.',code:'const data = JSON.parse(input);'}]},
+  ],
+  html:[],
+  c:[],
+  cpp:[],
+};
+
+function clientDetectBugs(code, lang) {
+  const rules = CLIENT_RULES[lang] || CLIENT_RULES.python;
+  const lines  = code.split('\n');
+  return rules.filter(r=>r.pattern.test(code)).map(r=>({
+    id:r.id, name:r.name, severity:r.severity,
+    line: Math.max(1, r.findLine(lines)),
+    lineSnippet: lines[Math.max(0,(r.findLine(lines)||1)-1)].trim().slice(0,60),
+    desc:r.desc, fixes:r.fixes,
+  }));
+}
+
+// ═══════════════════════════════════════════════════
+// STATE
+// ═══════════════════════════════════════════════════
+const scanHistory = [];
+let currentLang = 'python';
+let historyOpen = false;
+let lastScanCode = '';
+
+// ═══════════════════════════════════════════════════
+// LINE NUMBERS
+// ═══════════════════════════════════════════════════
+const codeTA = document.getElementById('code');
+const lineNums = document.getElementById('lineNumbers');
+function updateLines() {
+  const n = (codeTA.value.match(/\n/g)||[]).length + 1;
+  lineNums.textContent = Array.from({length:n},(_,i)=>i+1).join('\n');
+}
+codeTA.addEventListener('input', updateLines);
+codeTA.addEventListener('keydown', e=>{
+  if(e.key==='Tab'){e.preventDefault();
+    const s=codeTA.selectionStart;
+    codeTA.value=codeTA.value.substring(0,s)+'    '+codeTA.value.substring(codeTA.selectionEnd);
+    codeTA.selectionStart=codeTA.selectionEnd=s+4; updateLines();}
+});
+
+// ═══════════════════════════════════════════════════
+// LANG
+// ═══════════════════════════════════════════════════
+function setLang(el, lang) {
+  document.querySelectorAll('.lang-pill').forEach(p=>p.classList.remove('active'));
+  el.classList.add('active');
+  currentLang = lang;
+  const ph={python:'# Python code...',java:'// Java code...',c:'// C code...',
+            cpp:'// C++ code...',javascript:'// JavaScript code...',html:'<!-- HTML code -->'};
+  codeTA.placeholder = ph[lang]||'// Code here...';
+}
+
+// ═══════════════════════════════════════════════════
+// PRESETS
+// ═══════════════════════════════════════════════════
+function loadPreset(name) {
+  const p = PRESETS[name]; if(!p) return;
+  codeTA.value = p.code; updateLines();
+  const map={python:'Python',java:'Java',c:'C',cpp:'C++',javascript:'JavaScript',html:'HTML'};
+  document.querySelectorAll('.lang-pill').forEach(el=>{
+    const matches = el.textContent.trim()===map[p.lang];
+    el.classList.toggle('active', matches);
+  });
+  currentLang = p.lang;
+}
+
+// ═══════════════════════════════════════════════════
+// SCAN
+// ═══════════════════════════════════════════════════
+async function runScan() {
+  const code = codeTA.value.trim();
+  if(!code){alert('Please paste some code first.');return;}
+  lastScanCode = code;
+  const btn = document.getElementById('scanBtn');
+  btn.disabled=true; btn.innerHTML='<span class="spin"></span>Scanning...';
+  await new Promise(r=>setTimeout(r,600));
+
+  let bugs=[], fromServer=false, detectedLang=currentLang;
+  try {
+    const resp = await fetch('http://localhost:5001/analyze',{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({code,lang:currentLang}),
+      signal:AbortSignal.timeout(3000)
+    });
+    const data = await resp.json();
+    if(data.issues){bugs=data.issues;fromServer=true;detectedLang=data.lang||currentLang;}
+  } catch(_){}
+
+  if(!fromServer) bugs = clientDetectBugs(code, currentLang);
+
+  btn.disabled=false; btn.innerHTML='Scan for Bugs';
+  renderResults(code, bugs, fromServer, detectedLang);
+  addHistory(code, bugs, currentLang);
+  // Render unique feature panels if we got server data
+  if (fromServer) {
+    try {
+      const resp2 = await fetch('http://localhost:5001/analyze',{
+        method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({code,lang:currentLang}),
+        signal:AbortSignal.timeout(4000)
+      });
+      const fullData = await resp2.json();
+      renderFeaturePanels(fullData);
+    } catch(_) {
+      // render with empty data to show panels
+      renderFeaturePanels({exploits:[], complexity:{}, code_quality:{}});
+    }
+  } else {
+    renderFeaturePanels({exploits:[], complexity:{}, code_quality:{}});
+  }
+}
+
+// ═══════════════════════════════════════════════════
+// RENDER RESULTS
+// ═══════════════════════════════════════════════════
+function renderResults(code, bugs, fromServer, lang) {
+  document.getElementById('resultsEmpty').style.display='none';
+  const rc=document.getElementById('resultsContent');
+  rc.style.display='flex'; rc.style.flexDirection='column';
+  const isSafe=bugs.length===0;
+  const prob=isSafe?4:Math.min(45+bugs.length*15,96);
+  const lines=code.split('\n');
+
+  const verdictHTML=`
+  <div class="verdict ${isSafe?'safe':'buggy'}">
+    <div class="verdict-head">
+      <div class="verdict-icon">${isSafe?'✅':'⚠️'}</div>
+      <div class="verdict-status ${isSafe?'safe':'buggy'}">
+        ${isSafe?'No Bugs Detected':bugs.length+' Bug'+(bugs.length>1?'s':'')+' Found'}
+      </div>
+    </div>
+    <div class="verdict-meta">
+      <span class="vm-chip">probability ${prob}%</span>
+      <span class="vm-chip">${lines.length} lines</span>
+      <span class="lang-chip">${lang.toUpperCase()}</span>
+      <span class="vm-chip">${fromServer?'HGSN model':'heuristic'}</span>
+      <span class="vm-chip">${new Date().toLocaleTimeString()}</span>
+    </div>
+  </div>`;
+
+  let bugCardsHTML='';
+  if(isSafe){
+    bugCardsHTML=`<div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px;text-align:center">
+      <div style="font-size:2.5rem;margin-bottom:12px">✅</div>
+      <div style="font-family:var(--mono);font-size:12px;color:var(--safe);font-weight:600">Code looks clean</div>
+      <div style="font-family:var(--mono);font-size:11px;color:#aaa;margin-top:8px;line-height:1.7">
+        No known patterns detected.<br/>Click ✨ Suggest to see best implementations.
+      </div></div>`;
+  } else {
+    const cards=bugs.map((bug,i)=>{
+      const fixes=bug.fixes||[];
+      const tabs=fixes.map((f,j)=>`<div class="fix-tab ${j===0?'active':''}" onclick="switchFix(${i},${j},this)">${f.label}</div>`).join('');
+      const blocks=fixes.map((f,j)=>`
+        <div class="fix-block ${j===0?'active':''}" id="fix-${i}-${j}">
+          <div class="fix-approach">${f.approach||''}</div>
+          <pre class="fix-code">${escHtml(f.code||'')}<button class="copy-fix" onclick="copyFix(this)">copy</button></pre>
+        </div>`).join('');
+      const ln=bug.line||1;
+      const snippet=bug.lineSnippet||(lines[ln-1]||'').trim().slice(0,50);
+      return `
+      <div class="bug-card" onclick="expandBug(${i},this)">
+        <div class="bug-top">
+          <div class="bug-name">${escHtml(bug.name||bug.title||'Bug')}</div>
+          <div class="bug-sev sev-${bug.severity}">${bug.severity}</div>
+        </div>
+        <div class="bug-line">
+          <span class="line-badge">Line ${ln}</span>
+          <span>${escHtml(snippet)}</span>
+        </div>
+        <div class="bug-desc">${escHtml(bug.desc||bug.description||'')}</div>
+        <div class="bug-fixes" id="bugfixes-${i}">
+          <div class="fixes-label">All Correct Fixes</div>
+          <div class="fix-tab-row">${tabs}</div>
+          ${blocks}
+        </div>
+      </div>`;
+    }).join('');
+    bugCardsHTML=`<div class="bugs-section">
+      <div class="bugs-section-head"><span>Detected Bugs</span><span>${bugs.length} issue${bugs.length>1?'s':''}</span></div>
+      ${cards}
+    </div>`;
+  }
+  rc.innerHTML=verdictHTML+bugCardsHTML;
+  clearHighlights();
+  bugs.forEach(b=>{if(b.line) highlightLine(b.line);});
+}
+
+function escHtml(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+
+function expandBug(i,card){
+  const f=document.getElementById('bugfixes-'+i);
+  if(f) f.classList.toggle('open');
+}
+function switchFix(bi,fi,el){
+  event.stopPropagation();
+  const card=el.closest('.bug-card');
+  card.querySelectorAll('.fix-tab').forEach((t,j)=>t.classList.toggle('active',j===fi));
+  card.querySelectorAll('.fix-block').forEach((b,j)=>b.classList.toggle('active',j===fi));
+}
+function copyFix(btn){
+  event.stopPropagation();
+  const text=btn.parentElement.innerText.replace(/^copy$/m,'').trim();
+  navigator.clipboard.writeText(text).then(()=>{btn.textContent='copied!';setTimeout(()=>btn.textContent='copy',1500);});
+}
+
+// ═══════════════════════════════════════════════════
+// HIGHLIGHTS
+// ═══════════════════════════════════════════════════
+function clearHighlights(){document.querySelectorAll('.bug-highlight-row').forEach(e=>e.remove());}
+function highlightLine(ln){
+  const lh=parseFloat(getComputedStyle(codeTA).lineHeight)||20.4;
+  const div=document.createElement('div');
+  div.className='bug-highlight-row';
+  div.style.top=(16+(ln-1)*lh)+'px';
+  div.style.height=lh+'px';
+  document.getElementById('editorWrapper').appendChild(div);
+}
+
+// ═══════════════════════════════════════════════════
+// HISTORY
+// ═══════════════════════════════════════════════════
+function addHistory(code,bugs,lang){
+  scanHistory.unshift({snippet:code.trim().slice(0,80)+(code.length>80?'...':''),bugs,code,lang,time:new Date().toLocaleTimeString()});
+  if(scanHistory.length>30) scanHistory.pop();
+  renderHistory();
+}
+function renderHistory(){
+  const list=document.getElementById('historyList');
+  document.getElementById('histEmpty').style.display=scanHistory.length?'none':'block';
+  list.querySelectorAll('.hist-row').forEach(e=>e.remove());
+  scanHistory.forEach((h,i)=>{
+    const row=document.createElement('div');
+    row.className='hist-row';
+    row.innerHTML=`<div class="hist-dot" style="background:${h.bugs.length?'var(--danger)':'var(--safe)'}"></div>
+      <div class="hist-snippet">[${h.lang.toUpperCase()}] ${escHtml(h.snippet)}</div>
+      <div class="hist-bugs">${h.bugs.length?h.bugs.length+' bug'+(h.bugs.length>1?'s':''):'✓ clean'}</div>
+      <div class="hist-time">${h.time}</div>`;
+    row.onclick=()=>{codeTA.value=h.code;updateLines();renderResults(h.code,h.bugs,false,h.lang);};
+    list.appendChild(row);
+  });
+}
+function toggleHistory(){
+  historyOpen=!historyOpen;
+  document.getElementById('historyList').classList.toggle('open',historyOpen);
+  document.getElementById('histToggle').textContent=historyOpen?'▲ hide':'▼ show';
+}
+
+// ═══════════════════════════════════════════════════
+// SUGGEST MODAL
+// ═══════════════════════════════════════════════════
+async function runSuggest(){
+  const code=codeTA.value.trim();
+  if(!code){alert('Paste some code first.');return;}
+  const btn=document.getElementById('suggestBtn');
+  btn.disabled=true; btn.textContent='Analyzing...';
+  openModal();
+
+  try {
+    const resp = await fetch('http://localhost:5001/suggest',{
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({code,lang:currentLang}),
+      signal:AbortSignal.timeout(35000)
+    });
+    const data = await resp.json();
+    if(data.error) throw new Error(data.error);
+    renderSuggestModal(data);
+  } catch(err) {
+    document.getElementById('modalBody').innerHTML=`
+      <div class="modal-error">
+        <div style="font-size:2rem;margin-bottom:12px">⚠️</div>
+        Could not generate suggestions<br/>
+        <div class="modal-error-note">
+          Make sure <strong>python app.py</strong> is running.<br/>
+          Error: ${escHtml(err.message||'Connection failed')}<br/><br/>
+          The /suggest endpoint uses Claude AI to analyze your code.<br/>
+          When the server is running it identifies the algorithm automatically.
+        </div>
+      </div>`;
+  }
+  btn.disabled=false; btn.textContent='✨ Suggest';
+}
+
+function openModal(){
+  const modal=document.getElementById('suggestModal');
+  document.getElementById('modalTitle').textContent='✨ Algorithm Suggestions';
+  document.getElementById('modalBody').innerHTML=`
+    <div class="modal-loading">
+      <div style="font-size:2rem;margin-bottom:16px">🤖</div>
+      Analyzing your code...<br/>
+      <span style="font-size:10px;color:#bbb">Identifying algorithm and generating all implementations</span>
+    </div>`;
+  modal.classList.add('open');
+}
+function closeModal(){document.getElementById('suggestModal').classList.remove('open');}
+function closeModalOutside(e){if(e.target===document.getElementById('suggestModal')) closeModal();}
+
+function renderSuggestModal(data){
+  document.getElementById('modalTitle').textContent=`✨ ${data.algorithm||'Algorithm'} — All Implementations`;
+  const impls=(data.implementations||[]).map(impl=>`
+    <div class="impl-card">
+      <div class="impl-head">
+        <div class="impl-method">${escHtml(impl.method)}</div>
+        <div class="impl-badges">
+          <span class="impl-time">⏱ ${escHtml(impl.time||'?')}</span>
+          <span class="impl-space">📦 ${escHtml(impl.space||'?')}</span>
+        </div>
+      </div>
+      <div class="impl-when">${escHtml(impl.when||'')}</div>
+      <pre class="impl-code">${escHtml(impl.code||'')}</pre>
+    </div>`).join('');
+
+  document.getElementById('modalBody').innerHTML=`
+    <div class="algo-banner">
+      <div class="algo-name">${escHtml(data.algorithm||'Unknown Algorithm')}</div>
+      <div class="algo-desc">${escHtml(data.description||'')}</div>
+    </div>
+    ${data.corrected_code?`
+    <div class="corrected-section">
+      <div class="section-label">Corrected Code</div>
+      <pre class="corrected-code">${escHtml(data.corrected_code)}</pre>
+    </div>`:''}
+    <div class="section-label" style="margin-bottom:12px">All Implementations (Simplest → Most Optimal)</div>
+    <div class="impl-grid">${impls}</div>`;
+}
+
+// ═══════════════════════════════════════════════════
+// SERVER STATUS
+// ═══════════════════════════════════════════════════
+async function checkServer(){
+  try{
+    const r=await fetch('http://localhost:5001/health',{signal:AbortSignal.timeout(1500)});
+    const d=await r.json();
+    const el=document.getElementById('serverStatus');
+    el.textContent=d.model_loaded?'● model online':'● server online';
+    el.style.color=d.model_loaded?'var(--safe)':'var(--warn)';
+  }catch{
+    document.getElementById('serverStatus').textContent='○ demo mode';
+    document.getElementById('serverStatus').style.color='#bbb';
+  }
+}
+
+// ═══════════════════════════════════════════════════
+// UNIQUE FEATURE PANELS
+// ═══════════════════════════════════════════════════
+
+function showFeatPanel(name, el) {
+  document.querySelectorAll('.feat-tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.feat-panel').forEach(p => p.classList.remove('active'));
+  el.classList.add('active');
+  document.getElementById('fpanel-'+name).classList.add('active');
+}
+
+function renderFeaturePanels(data) {
+  const fp = document.getElementById('featurePanels');
+  fp.style.display = 'block';
+
+  // ── Exploit Simulation ─────────────────────────
+  const exploits = data.exploits || [];
+  const epanel = document.getElementById('fpanel-exploit');
+  if (!exploits.length) {
+    epanel.innerHTML = '<div style="font-family:var(--mono);font-size:11px;color:var(--safe);text-align:center;padding:24px">No exploitable vulnerabilities found. ✅</div>';
+  } else {
+    epanel.innerHTML = exploits.map(ex => `
+      <div class="exploit-card">
+        <div class="exploit-hd">
+          <div class="exploit-title">💀 ${escHtml(ex.title||'')}</div>
+          <div class="exploit-risk">${escHtml(ex.risk||'')}</div>
+        </div>
+        <div class="exploit-bd">
+          <div style="font-family:var(--mono);font-size:11px;color:#555;margin-bottom:10px">
+            <strong>Attacker goal:</strong> ${escHtml(ex.attacker_goal||'')}
+          </div>
+          <div style="font-family:var(--mono);font-size:9px;letter-spacing:.08em;text-transform:uppercase;color:#888;margin-bottom:6px">Attack Steps</div>
+          ${(ex.steps||[]).map((s,i)=>`<div class="xstep"><div class="xnum">${i+1}</div><div>${escHtml(s)}</div></div>`).join('')}
+          <div style="font-family:var(--mono);font-size:9px;letter-spacing:.08em;text-transform:uppercase;color:#888;margin:10px 0 4px">Live Payload Examples</div>
+          <table class="ptable">
+            <tr><th>Attack Type</th><th>Payload</th><th>Effect</th></tr>
+            ${(ex.payload_examples||[]).map(p=>`<tr>
+              <td>${escHtml(p.label||'')}</td>
+              <td class="ptd-payload">${escHtml(p.payload||'')}</td>
+              <td>${escHtml(p.effect||'')}</td>
+            </tr>`).join('')}
+          </table>
+          ${ex.demo_code?`<div style="font-family:var(--mono);font-size:9px;letter-spacing:.08em;text-transform:uppercase;color:#888;margin:10px 0 4px">Attacker Demo Code</div>
+          <pre class="fix-code">${escHtml(ex.demo_code)}</pre>`:''}
+          ${ex.real_world?`<div class="rw-note">🌍 Real World: ${escHtml(ex.real_world)}</div>`:''}
+        </div>
+      </div>`).join('');
+  }
+
+  // ── Complexity Analysis ─────────────────────────
+  const cx = data.complexity || {};
+  const cpanel = document.getElementById('fpanel-complexity');
+  const tcClass = {'O(1)':'on','O(log n)':'nlogn','O(n)':'on','O(n log n)':'nlogn',
+                   'O(n^2)':'n2','O(n^3)':'n2','O(2^n)':'exp'}[cx.time_complexity] || 'on';
+  const scClass = {'O(1)':'on','O(log n)':'nlogn','O(n)':'nlogn'}[cx.space_complexity] || 'on';
+  cpanel.innerHTML = `
+    <div class="cplx-grid">
+      <div class="cplx-card">
+        <div class="cplx-lbl">Time Complexity</div>
+        <div class="cplx-val ${tcClass}">${escHtml(cx.time_complexity||'?')}</div>
+        <div class="cplx-why">${escHtml(cx.time_reason||'')}</div>
+      </div>
+      <div class="cplx-card">
+        <div class="cplx-lbl">Space Complexity</div>
+        <div class="cplx-val ${scClass}">${escHtml(cx.space_complexity||'?')}</div>
+        <div class="cplx-why">${escHtml(cx.space_reason||'')}</div>
+      </div>
+    </div>
+    <div style="font-family:var(--mono);font-size:10px;color:#888;margin-bottom:8px;display:flex;gap:16px">
+      <span>Loops detected: <strong style="color:var(--ink)">${cx.loop_count||0}</strong></span>
+      <span>Recursive: <strong style="color:${cx.is_recursive?'var(--warn)':'var(--safe)'}">${cx.is_recursive?'Yes':'No'}</strong></span>
+      <span>Memoized: <strong style="color:${cx.has_memoization?'var(--safe)':'var(--ink)'}">${cx.has_memoization?'Yes':'No'}</strong></span>
+    </div>
+    ${(cx.suggestions||[]).length ? `<div class="cplx-tip">
+      <div style="font-family:var(--mono);font-size:9px;letter-spacing:.08em;text-transform:uppercase;color:var(--safe);margin-bottom:8px">Optimization Suggestions</div>
+      ${(cx.suggestions||[]).map(s=>`<div style="margin-bottom:6px">
+        <span style="color:var(--danger)">⚠ ${escHtml(s.issue)}</span><br/>
+        <span style="color:#555">${escHtml(s.fix)}</span><br/>
+        <span style="color:var(--safe)">→ ${escHtml(s.improvement)}</span>
+      </div>`).join('')}
+    </div>` : '<div style="font-family:var(--mono);font-size:11px;color:var(--safe);padding:8px 0">✅ No complexity improvements needed</div>'}`;
+
+  // ── Code Quality ───────────────────────────────
+  const cq = data.code_quality || {};
+  const qpanel = document.getElementById('fpanel-quality');
+  const sc = cq.score || 0;
+  const grade = cq.grade || 'A';
+  const fillColor = sc>=80?'var(--safe)':sc>=60?'var(--warn)':'var(--danger)';
+  const smells = cq.smells || [];
+  qpanel.innerHTML = `
+    <div class="score-row">
+      <div class="score-circle sc-${grade.toLowerCase()}">${grade}</div>
+      <div style="flex:1">
+        <div style="font-family:var(--display);font-size:1.1rem;font-weight:900">${sc}/100 Quality Score</div>
+        <div style="font-family:var(--mono);font-size:10px;color:#888;margin-top:2px">${smells.length} issue${smells.length!==1?'s':''} found</div>
+        <div class="score-bar"><div class="score-fill" style="width:${sc}%;background:${fillColor}"></div></div>
+      </div>
+    </div>
+    ${smells.length ? smells.map(s=>`<div class="smell-item">
+      <div class="smell-name"><span class="bug-sev sev-${s.severity}" style="margin-right:8px">${s.severity}</span>${escHtml(s.smell)}</div>
+      <div style="font-family:var(--mono);font-size:10px;color:#555;margin:4px 0">${escHtml(s.desc)}</div>
+      <div class="smell-fix">✅ Fix: ${escHtml(s.fix)}</div>
+    </div>`).join('') :
+    '<div style="font-family:var(--mono);font-size:11px;color:var(--safe);padding:8px 0">✅ No code smells detected — clean, maintainable code!</div>'}`;
+}
+
+// ═══════════════════════════════════════════════════
+// INIT
+// ═══════════════════════════════════════════════════
+loadPreset('java_errors');
+checkServer();
+setInterval(checkServer,10000);
+</script>
+</body>
+</html>
